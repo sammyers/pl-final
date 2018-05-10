@@ -1061,7 +1061,11 @@ object Shell {
         if (se.isInstanceOf[SEexpr] || se.isInstanceOf[SEcontinue] || se.isInstanceOf[SEstep] || se.isInstanceOf[SEstepOver]) {
           se.passDebugContext(debug)
         }
-        env = time { se.processEntry(env) }
+        if (debug.isPaused()) {
+          env = time { se.processEntry(debug.getEnv()) }
+        } else {
+          env = time { se.processEntry(env) }
+        }
       } catch {
         case e : Exception => println(e.getMessage)
       }
