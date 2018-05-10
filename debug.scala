@@ -291,6 +291,8 @@ abstract class Exp {
   def insertBreakpoint (position: Int) : Int = -1
 
   def canPause () : Boolean = false
+
+  def isBreakpoint () : Boolean = false
 }
 
 
@@ -322,7 +324,7 @@ case class EBoolean (val b:Boolean) extends Exp {
 }
 
 
-case class EVector (val es: List[Exp]) extends Exp {
+case class EVector (var es: List[Exp]) extends Exp {
   // Vectors
 
   override def toString () : String =
@@ -347,9 +349,11 @@ case class EVector (val es: List[Exp]) extends Exp {
     if (position > es.length - 1) {
       return -1
     }
-    for (var x <- position until es.length) {
+    for (x <- position until es.length) {
       if (es(x).canPause()) {
-        es.patch(x, Seq(new EBreakpoint(es(x))), 1)
+        if (!es(x).isBreakpoint()) {
+          es = es.patch(x, Seq(new EBreakpoint(es(x))), 1)
+        }
         return x
       }
     }
@@ -357,7 +361,7 @@ case class EVector (val es: List[Exp]) extends Exp {
   }
 
   override def canPause () : Boolean = {
-    for (var e <- es) {
+    for (e <- es) {
       if (e.canPause()) {
         return true
       }
@@ -421,7 +425,7 @@ case class EId (val id : String) extends Exp {
 }
 
 
-case class EApply (val f: Exp, val args: List[Exp]) extends Exp {
+case class EApply (var f: Exp, var args: List[Exp]) extends Exp {
   override def toString () : String =
     "EApply(" + f + "," + args + ")"
 
@@ -456,7 +460,22 @@ case class EApply (val f: Exp, val args: List[Exp]) extends Exp {
   }
 
   override def insertBreakpoint (position: Int) : Int = {
-    return f.insertBreakpoint(position)
+    if (position > args.length) {
+      return -1
+    } else if (position == 0 && f.canPause()) {
+      f = new EBreakpoint(f)
+      return position
+    } else {
+      for (x <- position until args.length) {
+        if (args(x).canPause()) {
+          if (!args(x).isBreakpoint()) {
+            args = args.patch(x, Seq(new EBreakpoint(args(x))), 1)
+          }
+          return x
+        }
+      }
+      return -1
+    }
   }
 
   override def canPause () : Boolean = true
@@ -481,7 +500,9 @@ case class ERecFunction (val self: String, val params: List[String], var body : 
     if (position > 0) {
       return -1
     }
-    body = new EBreakpoint(body)
+    if (!body.isBreakpoint()) {
+      body = new EBreakpoint(body)
+    }
     return position
   }
 
@@ -489,7 +510,7 @@ case class ERecFunction (val self: String, val params: List[String], var body : 
 }
 
 
-case class ELet (val bindings : List[(String,Exp)], var ebody : Exp) extends Exp {
+case class ELet (var bindings : List[(String,Exp)], var ebody : Exp) extends Exp {
 
   override def toString () : String =
     "ELet(" + bindings + "," + ebody + ")"
@@ -518,16 +539,22 @@ case class ELet (val bindings : List[(String,Exp)], var ebody : Exp) extends Exp
     if (position > bindings.length) {
       return -1
     } else if (position == bindings.length) {
-      ebody = new EBreakpoint(ebody)
+      if (!ebody.isBreakpoint()) {
+        ebody = new EBreakpoint(ebody)
+      }
       return position
     } else {
-      for (var x <- position until bindings.length) {
+      for (x <- position until bindings.length) {
         if (bindings(x)._2.canPause()) {
-          bindings.patch(x, (bindings(x)._1, new EBreakpoint(bindings(x)._2)), 1)
+          if (!bindings(x)._2.isBreakpoint()) {
+            bindings = bindings.patch(x, Seq((bindings(x)._1, new EBreakpoint(bindings(x)._2))), 1)
+          }
           return x
         }
       }
-      ebody = new EBreakpoint(ebody)
+      if (!ebody.isBreakpoint()) {
+        ebody = new EBreakpoint(ebody)
+      }
       return bindings.length
     }
   }
@@ -551,7 +578,9 @@ case class EThrow (var e : Exp) extends Exp {
     if (position > 0) {
       return -1
     }
-    e = new EBreakpoint(e)
+    if (!e.isBreakpoint()) {
+      e = new EBreakpoint(e)
+    }
     return position
   }
 
@@ -572,11 +601,15 @@ case class ETry (var body : Exp, val param: String, var ctch : Exp) extends Exp 
   override def insertBreakpoint (position: Int) : Int = {
     position match {
       case 0 => {
-        body = new EBreakpoint(body)
+        if (!body.isBreakpoint()) {
+          body = new EBreakpoint(body)
+        }
         return position
       }
       case 1 => {
-        ctch = new EBreakpoint(ctch)
+        if (!ctch.isBreakpoint()) {
+          ctch = new EBreakpoint(ctch)
+        }
         return position
       }
       case _ => {
@@ -604,6 +637,8 @@ case class EBreakpoint (val e : Exp) extends Exp {
   def eval (env:Env[Value]) : Value = {
     return new VBreakpoint(env, continuations.get, e)
   }
+
+  override def isBreakpoint () : Boolean = true
 }
 
 
@@ -682,6 +717,7 @@ class SExpParser extends RegexParsers {
     (expr ^^ { e => new SEexpr(e) }) |
     ("#show" ~ expr ^^ { case _ ~ e => new SEshow(e) }) |
     ("#continue" ^^ { s => new SEcontinue() }) |
+    ("#stepover" ^^ { s => new SEstepOver }) |
     ("#step" ^^ { s => new SEstep() }) |
     ("#quit" ^^ { s => new SEquit() })
 
@@ -733,10 +769,12 @@ class SEexpr (e:Exp) extends ShellEntry {
 
   def fail (v : Value) : Value = {
     if (v.isBreakpoint()) {
+      println("Original expression:")
+      println(debug.getInput())
       debug.break(v.asInstanceOf[VBreakpoint])
       println("\nNext to execute:")
       println(v.getReturnExp() + "\n")
-      println("ENV:")
+      println("Environment:")
       val nonStandard = v.getEnv().getContent().filterNot(x => keywords.contains(x._1) | x._1 == "")
       println(new Env(nonStandard.filterNot(_._1.startsWith("  "))))
     } else {
@@ -766,6 +804,19 @@ class SEcontinue extends ShellEntry {
   }
 }
 
+class SEstepOver extends ShellEntry {
+  var debug: DebugContext = new DebugContext()
+
+  def passDebugContext (debugContext: DebugContext) : Unit = {
+    debug = debugContext
+  }
+
+  def processEntry (env: Env[Value]): Env[Value] = {
+    debug.stepOver()
+    return env
+  }
+}
+
 class SEstep extends ShellEntry {
   var debug: DebugContext = new DebugContext()
 
@@ -774,7 +825,7 @@ class SEstep extends ShellEntry {
   }
 
   def processEntry (env: Env[Value]): Env[Value] = {
-    debug.step()
+    debug.stepInto()
     return env
   }
 }
@@ -826,6 +877,7 @@ class SEquit extends ShellEntry {
 
 class DebugContext {
   var paused = false
+  var input = ""
 
   var env: Env[Value] = new Env[Value](List())
   var continuations: Option[List[Exp]] = None
@@ -833,7 +885,11 @@ class DebugContext {
   var parentExp: Option[Exp] = None
   var stepPosition: Int = 0
 
-  def break (bkpt: VBreakpoint): Unit = {
+  def setInput (inputExp: String) : Unit = {
+    input = inputExp
+  }
+
+  def break (bkpt: VBreakpoint) : Unit = {
     paused = true
     env = bkpt.getEnv()
     continuations = Some(bkpt.getContinuations())
@@ -846,13 +902,18 @@ class DebugContext {
   }
 
   def stepOver () : Unit = {
-    var position = parentExp.get.insertBreakpoint(stepPosition + 1)
-    if (position < 0) {
-      stepOver()
-    } else {
-      stepPosition = stepPosition + 1
+    if (parentExp.isEmpty) {
       continue()
+      return
     }
+    var position = parentExp.get.insertBreakpoint(stepPosition + 1)
+    println(parentExp)
+    if (position < 0) {
+      stepPosition = 0
+    } else {
+      stepPosition = position
+    }
+    continue()
   }
 
   def stepInto () : Unit = {
@@ -860,6 +921,7 @@ class DebugContext {
     if (stepPosition < 0) {
       stepPosition = 0
       stepOver()
+      return
     } else {
       parentExp = returnExp
       continue()
@@ -867,6 +929,7 @@ class DebugContext {
   }
 
   def isPaused () : Boolean = paused
+  def getInput() : String = input
 
   def getEnv () : Env[Value] = env
   def getContinuations () : List[Exp] = continuations.get
@@ -931,8 +994,11 @@ object Shell {
       }
       try {
         val input = scala.io.StdIn.readLine()
+        if (!debug.isPaused()) {
+          debug.setInput(input)
+        }
         val se = parse(input)
-        if (se.isInstanceOf[SEexpr] || se.isInstanceOf[SEcontinue] || se.isInstanceOf[SEstep]) {
+        if (se.isInstanceOf[SEexpr] || se.isInstanceOf[SEcontinue] || se.isInstanceOf[SEstep] || se.isInstanceOf[SEstepOver]) {
           se.passDebugContext(debug)
         }
         env = time { se.processEntry(env) }
