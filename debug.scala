@@ -239,10 +239,10 @@ class Env[A] (val content: List[(String, A)]) {
 
   override def toString () : String = {
     var result = ""
-	  for (entry <- content) {
-	     result = result + "(" + entry._1 + " <- " + entry._2 + ")\n"
-	  }
-	  return result
+    for (entry <- content) {
+       result = result + "(" + entry._1 + " <- " + entry._2 + ")\n"
+    }
+    return result
   }
 
   
@@ -252,12 +252,12 @@ class Env[A] (val content: List[(String, A)]) {
 
 
   def lookup (id : String) : A = {
-      // lookup value for an identifier in the environment
-	  for (entry <- content) {
+    // lookup value for an identifier in the environment
+    for (entry <- content) {
       if (entry._1 == id) {
-      	 return entry._2
+         return entry._2
       }
-	  }
+    }
   throw new Exception("Environment error: unbound identifier "+id)
   }
 }
@@ -447,9 +447,9 @@ case class ELet (val bindings : List[(String,Exp)], val ebody : Exp) extends Exp
     var new_env = env
     for ((n,e) <- bindings) { 
       val v = e.eval(env)
-  	  new_env = new_env.push(n,v)
-  	}
-	return ebody.eval(new_env)
+      new_env = new_env.push(n,v)
+    }
+  return ebody.eval(new_env)
   }
 }
 
@@ -507,8 +507,8 @@ import scala.util.parsing.combinator._
 
 class SExpParser extends RegexParsers { 
 
-   // tokens
-   
+  // tokens
+
   def LP : Parser[Unit] = "(" ^^ { s => () }
   def RP : Parser[Unit] = ")" ^^ { s => () }
   def LB : Parser[Unit] = "[" ^^ { s => () }
