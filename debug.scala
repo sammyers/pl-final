@@ -290,7 +290,6 @@ abstract class Exp {
 
   def insertBreakpoint () : Unit = {
 
-  }
 }
 
 
@@ -577,6 +576,7 @@ class SExpParser extends RegexParsers {
     (expr ^^ { e => new SEexpr(e) }) |
     ("#show" ~ expr ^^ { case _ ~ e => new SEshow(e) }) |
     ("#continue" ^^ { s => new SEcontinue() }) |
+    ("#step" ^^ { s => new SEstep() }) |
     ("#quit" ^^ { s => new SEquit() })
 
 
@@ -650,6 +650,19 @@ class SEcontinue extends ShellEntry {
 
   def processEntry (env: Env[Value]): Env[Value] = {
     debug.continue()
+    return env
+  }
+}
+
+class SEstep extends ShellEntry {
+  var debug: DebugContext = new DebugContext()
+
+  def passDebugContext (debugContext: DebugContext) : Unit = {
+    debug = debugContext
+  }
+
+  def processEntry (env: Env[Value]): Env[Value] = {
+    debug.step()
     return env
   }
 }
