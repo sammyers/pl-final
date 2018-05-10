@@ -371,7 +371,7 @@ case class EIf (var ec : Exp, var et : Exp, var ee : Exp) extends Exp {
     }
   }
 
-  def insertBreakpoint (position: Int) : Int = {
+  override def insertBreakpoint (position: Int) : Int = {
     ec = new EBreakpoint(ec)
     return 0
   }
@@ -425,7 +425,7 @@ case class EApply (val f: Exp, val args: List[Exp]) extends Exp {
     }
   }
 
-  def insertBreakpoint (position: Int) : Int = {
+  override def insertBreakpoint (position: Int) : Int = {
     return f.insertBreakpoint(position)
   }
 }
@@ -445,7 +445,7 @@ case class ERecFunction (val self: String, val params: List[String], var body : 
   def eval (env : Env[Value]) : Value =
     new VRecClosure(self,params,body,env)
 
-  def insertBreakpoint (position: Int) : Int = {
+  override def insertBreakpoint (position: Int) : Int = {
     body = new EBreakpoint(body)
     return position
   }
@@ -477,7 +477,7 @@ case class ELet (val bindings : List[(String,Exp)], var ebody : Exp) extends Exp
     return ebody.eval(new_env)
   }
 
-  def insertBreakpoint (position: Int) : Int = {
+  override def insertBreakpoint (position: Int) : Int = {
     ebody = new EBreakpoint(ebody)
     return position
   }
@@ -495,7 +495,7 @@ case class EThrow (var e : Exp) extends Exp {
   def eval (env : Env[Value]) : Value =
     error("should never have to evaluate a throw")
 
-  def insertBreakpoint (position: Int) : Int = {
+  override def insertBreakpoint (position: Int) : Int = {
     e = new EBreakpoint(e)
     return position
   }
@@ -512,7 +512,7 @@ case class ETry (var body : Exp, val param: String, val ctch : Exp) extends Exp 
   def eval (env:Env[Value]) : Value =
     error("should never have to evaluate a try")
 
-  def insertBreakpoint (position: Int) : Int = {
+  override def insertBreakpoint (position: Int) : Int = {
     body = new EBreakpoint(body)
     return position
   }
@@ -838,7 +838,7 @@ object Shell {
       try {
         val input = scala.io.StdIn.readLine()
         val se = parse(input)
-        if (se.isInstanceOf[SEexpr] || se.isInstanceOf[SEcontinue]) {
+        if (se.isInstanceOf[SEexpr] || se.isInstanceOf[SEcontinue] || se.isInstanceOf[SEstep]) {
           se.passDebugContext(debug)
         }
         env = time { se.processEntry(env) }
