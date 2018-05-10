@@ -293,6 +293,8 @@ abstract class Exp {
   def canPause () : Boolean = false
 
   def isBreakpoint () : Boolean = false
+
+  def getExp () : Exp = this
 }
 
 
@@ -351,6 +353,9 @@ case class EVector (var es: List[Exp]) extends Exp {
     }
     for (x <- position until es.length) {
       if (es(x).canPause()) {
+        if (x > 0) {
+          es = es.patch(x - 1, Seq(es(x-1).getExp()), 1)
+        }
         if (!es(x).isBreakpoint()) {
           es = es.patch(x, Seq(new EBreakpoint(es(x))), 1)
         }
@@ -398,6 +403,7 @@ case class EIf (var ec : Exp, var et : Exp, var ee : Exp) extends Exp {
         return position
       }
       case 1 => {
+        ec = ec.getExp()
         et = new EBreakpoint(et)
         ee = new EBreakpoint(ee)
         return 2
@@ -472,6 +478,8 @@ case class EApply (var f: Exp, var args: List[Exp]) extends Exp {
             args = args.patch(x, Seq(new EBreakpoint(args(x))), 1)
           }
           return x
+        } else {
+          args = args.patch(x - 1, Seq(args(x - 1).getExp()), 1)
         }
       }
       return -1
@@ -539,6 +547,9 @@ case class ELet (var bindings : List[(String,Exp)], var ebody : Exp) extends Exp
     if (position > bindings.length) {
       return -1
     } else if (position == bindings.length) {
+      for (x <- position until bindings.length) {
+        bindings = bindings.patch(x, Seq((bindings(x)._1, bindings(x)._2.getExp())), 1)
+      }
       if (!ebody.isBreakpoint()) {
         ebody = new EBreakpoint(ebody)
       }
@@ -550,6 +561,8 @@ case class ELet (var bindings : List[(String,Exp)], var ebody : Exp) extends Exp
             bindings = bindings.patch(x, Seq((bindings(x)._1, new EBreakpoint(bindings(x)._2))), 1)
           }
           return x
+        } else if (x > 0) {
+          bindings = bindings.patch(x - 1, Seq((bindings(x - 1)._1, bindings(x - 1)._2.getExp())), 1)
         }
       }
       if (!ebody.isBreakpoint()) {
@@ -607,6 +620,7 @@ case class ETry (var body : Exp, val param: String, var ctch : Exp) extends Exp 
         return position
       }
       case 1 => {
+        body = body.getExp()
         if (!ctch.isBreakpoint()) {
           ctch = new EBreakpoint(ctch)
         }
@@ -637,6 +651,8 @@ case class EBreakpoint (val e : Exp) extends Exp {
   def eval (env:Env[Value]) : Value = {
     return new VBreakpoint(env, continuations.get, e)
   }
+
+  override def getExp () : Exp = e
 
   override def isBreakpoint () : Boolean = true
 }
@@ -880,7 +896,9 @@ class DebugContext {
   var input = ""
 
   var env: Env[Value] = new Env[Value](List())
+  var prevEnv: Env[Value] = new Env[Value](List())
   var continuations: Option[List[Exp]] = None
+  var prevContinuations: Option[List[Exp]] = None
   var returnExp: Option[Exp] = None
   var parentExp: Option[Exp] = None
   var stepPosition: Int = 0
@@ -900,6 +918,11 @@ class DebugContext {
     paused = false
     returnExp.get.cps(continuations.get.head, continuations.get.last).eval(env)
   }
+  
+  def stepOutAndContinue () : Unit = {
+    paused = false
+    parentExp.get.cps(prevContinuations.get.head, prevContinuations.get.last).eval(prevEnv)
+  }
 
   def stepOver () : Unit = {
     if (parentExp.isEmpty) {
@@ -907,13 +930,12 @@ class DebugContext {
       return
     }
     var position = parentExp.get.insertBreakpoint(stepPosition + 1)
-    println(parentExp)
     if (position < 0) {
       stepPosition = 0
     } else {
       stepPosition = position
     }
-    continue()
+    stepOutAndContinue()
   }
 
   def stepInto () : Unit = {
@@ -923,6 +945,8 @@ class DebugContext {
       stepOver()
       return
     } else {
+      prevEnv = env
+      prevContinuations = continuations
       parentExp = returnExp
       continue()
     }
