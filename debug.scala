@@ -280,7 +280,7 @@ object Names {
 
 abstract class Exp {
 
-  def error (msg : String) : Nothing = { 
+  def error (msg : String) : Nothing = {
     throw new Exception("Eval error: "+ msg + "\n   in expression " + this)
   }
 
@@ -649,6 +649,9 @@ class SEexpr (e:Exp) extends ShellEntry {
 
   var debug: DebugContext = new DebugContext()
 
+  val keywords = List("true","false","not","+","*","=","<","empty?",
+    "first","rest","empty","cons","print!")
+
   def passDebugContext (debugContext: DebugContext) : Unit = {
     debug = debugContext
   }
@@ -661,8 +664,11 @@ class SEexpr (e:Exp) extends ShellEntry {
   def fail (v : Value) : Value = {
     if (v.isBreakpoint()) {
       debug.break(v.asInstanceOf[VBreakpoint])
+      println("\nNext to execute:")
+      println(v.getReturnExp() + "\n")
       println("ENV:")
-      println(new Env(v.getEnv().getContent().dropRight(15)))
+      val nonStandard = v.getEnv().getContent().filterNot(x => keywords.contains(x._1) | x._1 == "")
+      println(new Env(nonStandard.filterNot(_._1.startsWith("  "))))
     } else {
       println("EXCEPTION("+v+")")
     }
