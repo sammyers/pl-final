@@ -280,17 +280,15 @@ object Names {
 
 abstract class Exp {
 
-  def error (msg : String) : Nothing = {
-     throw new Exception("Eval error: "+ msg + "\n   in expression " + this)
+  def error (msg : String) : Nothing = { 
+    throw new Exception("Eval error: "+ msg + "\n   in expression " + this)
   }
 
   def cps (K1 : Exp, K2 : Exp) : Exp
 
   def eval (env : Env[Value]) : Value
 
-  def insertBreakpoint () : Unit = {
-
-  }
+  def insertBreakpoint (position: Int) : Int = -1
 }
 
 
@@ -323,7 +321,7 @@ case class EBoolean (val b:Boolean) extends Exp {
 
 
 case class EVector (val es: List[Exp]) extends Exp {
-    // Vectors
+  // Vectors
 
   override def toString () : String =
     "EVector" + es.addString(new StringBuilder(),"(", " ", ")").toString()
@@ -342,10 +340,18 @@ case class EVector (val es: List[Exp]) extends Exp {
     val vs = es.map((e:Exp) => e.eval(env))
     return new VVector(vs)
   }
+
+  override def insertBreakpoint (position: Int) : Int = {
+    if (position > es.length - 1) {
+      return -1
+    }
+    es.patch(position, Seq(new EBreakpoint(es(position))), 1)
+    return position
+  }
 }
 
 
-case class EIf (val ec : Exp, val et : Exp, val ee : Exp) extends Exp {
+case class EIf (var ec : Exp, var et : Exp, var ee : Exp) extends Exp {
   // Conditional expression
 
   override def toString () : String =
@@ -363,6 +369,11 @@ case class EIf (val ec : Exp, val et : Exp, val ee : Exp) extends Exp {
     } else {
       return et.eval(env)
     }
+  }
+
+  def insertBreakpoint (position: Int) : Int = {
+    ec = new EBreakpoint(ec)
+    return 0
   }
 }
 
@@ -413,10 +424,14 @@ case class EApply (val f: Exp, val args: List[Exp]) extends Exp {
       return vf.getBody.eval(new_env)
     }
   }
+
+  def insertBreakpoint (position: Int) : Int = {
+    return f.insertBreakpoint(position)
+  }
 }
 
 
-case class ERecFunction (val self: String, val params: List[String], val body : Exp) extends Exp {
+case class ERecFunction (val self: String, val params: List[String], var body : Exp) extends Exp {
 
   override def toString () : String =
     "ERecFunction(" + self + "," + params + "," + body + ")"
@@ -429,10 +444,15 @@ case class ERecFunction (val self: String, val params: List[String], val body : 
 
   def eval (env : Env[Value]) : Value =
     new VRecClosure(self,params,body,env)
+
+  def insertBreakpoint (position: Int) : Int = {
+    body = new EBreakpoint(body)
+    return position
+  }
 }
 
 
-case class ELet (val bindings : List[(String,Exp)], val ebody : Exp) extends Exp {
+case class ELet (val bindings : List[(String,Exp)], var ebody : Exp) extends Exp {
 
   override def toString () : String =
     "ELet(" + bindings + "," + ebody + ")"
@@ -454,12 +474,17 @@ case class ELet (val bindings : List[(String,Exp)], val ebody : Exp) extends Exp
       val v = e.eval(env)
       new_env = new_env.push(n,v)
     }
-  return ebody.eval(new_env)
+    return ebody.eval(new_env)
+  }
+
+  def insertBreakpoint (position: Int) : Int = {
+    ebody = new EBreakpoint(ebody)
+    return position
   }
 }
 
 
-case class EThrow (val e : Exp) extends Exp {
+case class EThrow (var e : Exp) extends Exp {
 
   override def toString () : String =
     "EThrow(" + e + ")"
@@ -469,9 +494,14 @@ case class EThrow (val e : Exp) extends Exp {
 
   def eval (env : Env[Value]) : Value =
     error("should never have to evaluate a throw")
+
+  def insertBreakpoint (position: Int) : Int = {
+    e = new EBreakpoint(e)
+    return position
+  }
 }
 
-case class ETry (val body : Exp, val param: String, val ctch : Exp) extends Exp {
+case class ETry (var body : Exp, val param: String, val ctch : Exp) extends Exp {
 
   override def toString () : String =
     "ETry("+body+","+param+","+ctch+")"
@@ -481,6 +511,11 @@ case class ETry (val body : Exp, val param: String, val ctch : Exp) extends Exp 
 
   def eval (env:Env[Value]) : Value =
     error("should never have to evaluate a try")
+
+  def insertBreakpoint (position: Int) : Int = {
+    body = new EBreakpoint(body)
+    return position
+  }
 }
 
 
@@ -716,6 +751,11 @@ class DebugContext {
   def continue () : Unit = {
     paused = false
     returnExp.get.cps(continuations.get.head, continuations.get.last).eval(env)
+  }
+
+  def step () : Unit = {
+    returnExp.get.insertBreakpoint(0)
+    continue()
   }
 
   def isPaused () : Boolean = paused
