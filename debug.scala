@@ -295,6 +295,8 @@ abstract class Exp {
   def isBreakpoint () : Boolean = false
 
   def getExp () : Exp = this
+
+  def getDebugReadable () : String = ""
 }
 
 
@@ -309,6 +311,8 @@ case class EInteger (val i:Integer) extends Exp {
 
   def eval (env:Env[Value]) : Value =
     new VInteger(i)
+
+  override def getDebugReadable () : String = i.toString()
 }
 
 
@@ -323,6 +327,8 @@ case class EBoolean (val b:Boolean) extends Exp {
 
     def eval (env:Env[Value]) : Value =
       new VBoolean(b)
+
+    override def getDebugReadable () : String = b.toString()
 }
 
 
@@ -373,6 +379,11 @@ case class EVector (var es: List[Exp]) extends Exp {
     }
     return false
   }
+
+  override def getDebugReadable () : String = {
+    val strings : List[String] = es.map(_.getDebugReadable())
+    return "[" + strings.mkString(" ") + "]"
+  }
 }
 
 
@@ -415,6 +426,10 @@ case class EIf (var ec : Exp, var et : Exp, var ee : Exp) extends Exp {
   }
 
   override def canPause () : Boolean = true
+
+  override def getDebugReadable () : String = {
+    return "(if " + ec.getDebugReadable() + " " + et.getDebugReadable() + " " + ee.getDebugReadable() + ")"
+  }
 }
 
 
@@ -428,6 +443,8 @@ case class EId (val id : String) extends Exp {
 
   def eval (env : Env[Value]) : Value =
     env.lookup(id)
+
+  override def getDebugReadable () : String = id
 }
 
 
@@ -487,6 +504,9 @@ case class EApply (var f: Exp, var args: List[Exp]) extends Exp {
   }
 
   override def canPause () : Boolean = true
+
+  override def getDebugReadable () : String =
+    "(" + f.getDebugReadable() + " " + args.map(_.getDebugReadable()).mkString(" ") + ")"
 }
 
 
@@ -515,6 +535,9 @@ case class ERecFunction (val self: String, val params: List[String], var body : 
   }
 
   override def canPause () : Boolean = true
+
+  override def getDebugReadable () : String =
+    "(fun " + self + " (" + params.mkString(" ") + ") " + body.getDebugReadable() + ")"
 }
 
 
@@ -573,6 +596,9 @@ case class ELet (var bindings : List[(String,Exp)], var ebody : Exp) extends Exp
   }
 
   override def canPause () : Boolean = true
+
+  override def getDebugReadable () : String =
+    "(let (" + bindings.map { case (name, exp) => "(" + name + " " + exp.getDebugReadable() + ")" }.mkString(" ") + ") " + ebody.getDebugReadable() + ")"
 }
 
 
@@ -598,6 +624,9 @@ case class EThrow (var e : Exp) extends Exp {
   }
 
   override def canPause () : Boolean = true
+
+  override def getDebugReadable () : String =
+    "(throw " + e.getDebugReadable() + ")"
 }
 
 case class ETry (var body : Exp, val param: String, var ctch : Exp) extends Exp {
@@ -633,6 +662,9 @@ case class ETry (var body : Exp, val param: String, var ctch : Exp) extends Exp 
   }
 
   override def canPause () : Boolean = true
+
+  override def getDebugReadable () : String =
+    "(try " + body.getDebugReadable() + " catch (" + param + ") " + ctch.getDebugReadable() + ")"
 }
 
 
@@ -655,6 +687,8 @@ case class EBreakpoint (val e : Exp) extends Exp {
   override def getExp () : Exp = e
 
   override def isBreakpoint () : Boolean = true
+
+  override def getDebugReadable () : String = e.getDebugReadable()
 }
 
 
@@ -789,6 +823,8 @@ class SEexpr (e:Exp) extends ShellEntry {
       println(debug.getInput())
       debug.break(v.asInstanceOf[VBreakpoint])
       println("\nNext to execute:")
+      println(v.getReturnExp().getDebugReadable() + "\n")
+      println("Abstract representation:")
       println(v.getReturnExp() + "\n")
       println("Environment:")
       val nonStandard = v.getEnv().getContent().filterNot(x => keywords.contains(x._1) | x._1 == "")
